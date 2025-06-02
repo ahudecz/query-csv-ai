@@ -87,16 +87,6 @@ export const UploadData = ({ onDataUploaded }: UploadDataProps) => {
         throw new Error("Failed to parse CSV file");
       }
 
-      if (parsedData.totalRows < 30000 || parsedData.totalColumns < 25) {
-        toast({
-          title: "File requirements not met",
-          description: "File should have at least 30,000 rows and 25 columns",
-          variant: "destructive"
-        });
-        setUploading(false);
-        return;
-      }
-
       const stats = calculateStats(parsedData);
       const dataWithStats = { ...parsedData, stats, fileName: file.name };
       
@@ -211,10 +201,6 @@ export const UploadData = ({ onDataUploaded }: UploadDataProps) => {
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="text-sm">Maximum file size: 100MB</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm">Minimum: 30,000 rows × 25 columns</span>
               </div>
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
