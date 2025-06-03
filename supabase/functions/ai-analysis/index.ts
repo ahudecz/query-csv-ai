@@ -62,10 +62,11 @@ serve(async (req) => {
 
     let vectorContext = '';
     let relevantChunks: any[] = [];
+    let searchMethod = 'none';
 
     if (vectorCount && vectorCount.length > 0) {
-      // Generate embedding for the user's question
-      console.log('Generating embedding for user question');
+      // First try vector similarity search
+      console.log('Attempting vector similarity search');
       const questionEmbeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
         headers: {
@@ -82,60 +83,83 @@ serve(async (req) => {
         const questionEmbeddingData = await questionEmbeddingResponse.json();
         const questionEmbedding = questionEmbeddingData.data[0].embedding;
 
-        // Enhanced vector search with better similarity threshold
-        console.log('Searching for relevant data chunks with vector similarity');
+        // Get all vectorized chunks for similarity calculation
         const { data: vectorData, error: vectorError } = await supabase
           .from('data_vectors')
           .select('*')
           .eq('dataset_id', datasetId)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(20); // Get more chunks initially
+          .eq('user_id', user.id);
 
-        if (!vectorError && vectorData) {
-          // Calculate cosine similarity manually since we don't have the RPC function
+        if (!vectorError && vectorData && vectorData.length > 0) {
+          // Calculate similarities
           const similarities = vectorData
             .filter(chunk => chunk.embedding)
             .map(chunk => {
               const similarity = cosineSimilarity(questionEmbedding, chunk.embedding);
               return { ...chunk, similarity };
             })
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, 8); // Take top 8 most similar chunks
+            .sort((a, b) => b.similarity - a.similarity);
 
-          relevantChunks = similarities.filter(chunk => chunk.similarity > 0.5); // Lower threshold for better recall
+          // Use much lower threshold for better recall
+          relevantChunks = similarities.filter(chunk => chunk.similarity > 0.3).slice(0, 10);
           
-          console.log(`Found ${relevantChunks.length} relevant chunks with similarity > 0.5`);
-          console.log('Similarity scores:', relevantChunks.map(c => c.similarity));
+          if (relevantChunks.length === 0) {
+            // If no chunks meet similarity threshold, use top 5 chunks
+            relevantChunks = similarities.slice(0, 5);
+            searchMethod = 'top_chunks';
+            console.log('Using top 5 chunks as fallback');
+          } else {
+            searchMethod = 'vector_similarity';
+            console.log(`Found ${relevantChunks.length} relevant chunks with similarity > 0.3`);
+          }
         }
       }
-    } else {
-      console.log('No vector data found, vectorization may not be complete');
-      // Fallback: get recent raw data chunks
-      const { data: fallbackData, error: fallbackError } = await supabase
+    }
+
+    // If we still have no relevant chunks, try keyword-based search
+    if (relevantChunks.length === 0) {
+      console.log('Falling back to keyword-based search');
+      const keywords = extractKeywords(message);
+      
+      const { data: keywordData, error: keywordError } = await supabase
         .from('data_vectors')
         .select('*')
         .eq('dataset_id', datasetId)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(20);
 
-      if (!fallbackError && fallbackData) {
-        relevantChunks = fallbackData;
-        console.log(`Using fallback: ${relevantChunks.length} recent chunks`);
+      if (!keywordError && keywordData) {
+        // Simple keyword matching
+        relevantChunks = keywordData
+          .filter(chunk => {
+            const text = chunk.chunk_text.toLowerCase();
+            return keywords.some(keyword => text.includes(keyword.toLowerCase()));
+          })
+          .slice(0, 8);
+        
+        if (relevantChunks.length > 0) {
+          searchMethod = 'keyword_search';
+          console.log(`Found ${relevantChunks.length} chunks using keyword search`);
+        } else {
+          // Last resort: get recent chunks
+          relevantChunks = keywordData.slice(0, 5);
+          searchMethod = 'recent_chunks';
+          console.log('Using recent chunks as final fallback');
+        }
       }
     }
 
     // Build context from relevant chunks
     if (relevantChunks.length > 0) {
-      vectorContext = '\n\nRelevant data from your sales dataset:\n' + 
+      vectorContext = '\n\nRelevant data from your dataset:\n' + 
         relevantChunks.map((chunk: any, index: number) => 
           `\nData Chunk ${index + 1} (Rows ${chunk.chunk_metadata?.batch_start || 'unknown'}-${chunk.chunk_metadata?.batch_end || 'unknown'}):\n${chunk.chunk_text}`
         ).join('\n');
       
-      console.log(`Built context from ${relevantChunks.length} relevant data chunks`);
+      console.log(`Built context using ${searchMethod} with ${relevantChunks.length} chunks`);
     } else {
-      console.log('No relevant chunks found, using basic dataset context only');
+      console.log('No relevant chunks found - providing dataset overview only');
     }
 
     // Save user message
@@ -146,7 +170,7 @@ serve(async (req) => {
       content: message
     });
 
-    // Enhanced context for AI with better financial analysis focus
+    // Enhanced context for AI
     const dataContext = `
 Sales Dataset: ${dataset.original_filename}
 Total Rows: ${dataset.total_rows}
@@ -161,32 +185,35 @@ ${Object.entries(dataset.stats).map(([col, stats]: [string, any]) =>
   }`
 ).join('\n')}
 
-Vectorization Status: ${vectorCount?.length || 0} data chunks processed${vectorContext}
+Search Method Used: ${searchMethod}
+Data Chunks Available: ${vectorCount?.length || 0}
+Relevant Chunks Found: ${relevantChunks.length}${vectorContext}
     `;
 
-    const systemPrompt = `You are a financial data analyst AI assistant specializing in sales and market analysis. You help users analyze their sales datasets by providing insights, identifying patterns, and answering questions about their business data.
+    const systemPrompt = `You are a financial data analyst AI assistant specializing in sales and business analytics. You help users analyze their sales datasets by providing insights, identifying patterns, and answering questions about their business data.
 
 Current dataset context:
 ${dataContext}
 
 Guidelines:
-- This appears to be sales data with brands, markets, and financial periods
-- Focus on providing specific insights based on the actual data shown in the relevant chunks
-- When analyzing brands like "JW Red Label", look for all mentions across different time periods and markets
-- Provide quantitative analysis with specific numbers from the data
-- If asking about breakdowns (e.g., "by customer", "by market"), aggregate the relevant data
-- Suggest follow-up questions that would provide deeper business insights
-- If limited data is shown, acknowledge this and suggest ways to get more comprehensive analysis
-- Always specify which data chunks you're referencing for transparency
+- This is sales data with brands, markets, customers, and financial periods (FY = Financial Year)
+- When users ask for breakdowns "by customer" or "by market", look for those specific data fields in the chunks
+- Provide specific quantitative analysis with actual numbers from the data shown
+- If asking about specific brands like "JW Red Label", search through all provided chunks for mentions
+- Always specify which data chunks you're referencing and acknowledge any limitations
+- If limited data is available, suggest how to get more comprehensive analysis
+- Focus on actionable business insights
 
 For sales analysis:
 - Look for patterns across time periods (FY, quarters, months)
-- Compare performance across markets and customers
-- Identify top/bottom performers
-- Calculate growth rates and trends where possible
+- Compare performance across markets, customers, and products
+- Identify top/bottom performers when possible
+- Calculate totals and trends where data allows
+
+IMPORTANT: If you cannot find specific data for the user's question in the provided chunks, clearly state this and suggest alternative approaches or clarify what data would be needed.
 `;
 
-    // Call OpenAI with enhanced prompt
+    // Call OpenAI
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -199,8 +226,8 @@ For sales analysis:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: message }
         ],
-        temperature: 0.3, // Lower temperature for more consistent analysis
-        max_tokens: 1200
+        temperature: 0.2,
+        max_tokens: 1500
       }),
     });
 
@@ -211,21 +238,25 @@ For sales analysis:
     const data = await response.json();
     const aiResponse = data.choices[0].message.content;
 
-    // Save AI response with enhanced vector context
+    // Save AI response with metadata
     await supabase.from('chat_messages').insert({
       session_id: sessionId,
       user_id: user.id,
       message_type: 'ai',
       content: aiResponse,
       vector_context: {
+        search_method: searchMethod,
         chunks_used: relevantChunks.length,
-        chunk_metadata: relevantChunks.map(chunk => chunk.chunk_metadata),
-        vectorization_status: `${vectorCount?.length || 0} total chunks available`,
-        similarity_scores: relevantChunks.map(chunk => chunk.similarity).filter(Boolean)
+        total_chunks_available: vectorCount?.length || 0,
+        chunk_ranges: relevantChunks.map(chunk => ({
+          start: chunk.chunk_metadata?.batch_start,
+          end: chunk.chunk_metadata?.batch_end,
+          similarity: chunk.similarity
+        }))
       }
     });
 
-    console.log(`AI analysis completed with ${relevantChunks.length} relevant chunks`);
+    console.log(`Analysis completed using ${searchMethod} with ${relevantChunks.length} chunks`);
 
     return new Response(JSON.stringify({ response: aiResponse }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -239,6 +270,17 @@ For sales analysis:
     });
   }
 });
+
+// Helper function to extract keywords from user query
+function extractKeywords(query: string): string[] {
+  // Simple keyword extraction - remove common words and extract meaningful terms
+  const commonWords = ['what', 'is', 'the', 'of', 'by', 'for', 'and', 'or', 'in', 'on', 'at', 'to', 'from'];
+  return query
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !commonWords.includes(word));
+}
 
 // Helper function to calculate cosine similarity
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
