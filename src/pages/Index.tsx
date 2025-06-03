@@ -10,16 +10,23 @@ const Index = () => {
   const [activeSection, setActiveSection] = useState("upload");
   const [uploadedData, setUploadedData] = useState(null);
 
+  const handleDataUploaded = (data: any) => {
+    console.log('Data uploaded successfully:', data);
+    setUploadedData(data);
+    // Automatically switch to questions section after successful upload
+    setActiveSection("questions");
+  };
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case "upload":
-        return <UploadDataEnhanced onDataUploaded={setUploadedData} />;
+        return <UploadDataEnhanced onDataUploaded={handleDataUploaded} />;
       case "questions":
         return <AskQuestionsEnhanced uploadedData={uploadedData} />;
       case "results":
         return <ViewResults uploadedData={uploadedData} />;
       default:
-        return <UploadDataEnhanced onDataUploaded={setUploadedData} />;
+        return <UploadDataEnhanced onDataUploaded={handleDataUploaded} />;
     }
   };
 
@@ -35,7 +42,7 @@ const Index = () => {
               <p className="text-gray-600">Upload your financial data and get AI-powered insights</p>
             </header>
 
-            {uploadedData && (
+            {uploadedData && activeSection !== "upload" && (
               <div className="mb-8">
                 <DataPreview data={uploadedData.preview} />
               </div>

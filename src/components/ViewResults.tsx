@@ -1,13 +1,14 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, LineChart, TrendingUp, PieChart } from "lucide-react";
+import { BarChart, LineChart, TrendingUp, PieChart, AlertCircle } from "lucide-react";
 
 interface ViewResultsProps {
   uploadedData: any;
 }
 
 export const ViewResults = ({ uploadedData }: ViewResultsProps) => {
-  if (!uploadedData) {
+  console.log('ViewResults received data:', uploadedData);
+
+  if (!uploadedData || !uploadedData.preview) {
     return (
       <div className="p-8">
         <Card>
@@ -23,7 +24,24 @@ export const ViewResults = ({ uploadedData }: ViewResultsProps) => {
     );
   }
 
-  const { stats, totalRows, totalColumns } = uploadedData;
+  const { stats, totalRows, totalColumns } = uploadedData.preview;
+  
+  if (!stats) {
+    return (
+      <div className="p-8">
+        <Card>
+          <CardContent className="p-8">
+            <div className="text-center">
+              <AlertCircle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Processing Data</h3>
+              <p className="text-gray-600">Your data is being analyzed. Please wait a moment...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const numericColumns = Object.entries(stats).filter(([_, stat]: [string, any]) => stat.type === 'numeric');
 
   return (
@@ -142,13 +160,13 @@ export const ViewResults = ({ uploadedData }: ViewResultsProps) => {
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <div className="text-2xl font-bold text-blue-600">
-                  {totalRows.toLocaleString()}
+                  {totalRows?.toLocaleString() || 'N/A'}
                 </div>
                 <div className="text-sm text-blue-600">Total Rows</div>
               </div>
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <div className="text-2xl font-bold text-green-600">
-                  {totalColumns}
+                  {totalColumns || 'N/A'}
                 </div>
                 <div className="text-sm text-green-600">Columns</div>
               </div>
@@ -160,7 +178,7 @@ export const ViewResults = ({ uploadedData }: ViewResultsProps) => {
               </div>
               <div className="text-center p-4 bg-orange-50 rounded-lg">
                 <div className="text-2xl font-bold text-orange-600">
-                  {Math.round((numericColumns.length / totalColumns) * 100)}%
+                  {totalColumns ? Math.round((numericColumns.length / totalColumns) * 100) : 0}%
                 </div>
                 <div className="text-sm text-orange-600">Analyzable</div>
               </div>

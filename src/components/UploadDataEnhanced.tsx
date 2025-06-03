@@ -1,8 +1,7 @@
-
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, FileText, AlertCircle } from "lucide-react";
+import { Upload, FileText, AlertCircle, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,10 +13,13 @@ interface UploadDataEnhancedProps {
 export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) => {
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const { toast } = useToast();
   const { session } = useAuth();
 
   const handleFile = async (file: File) => {
+    console.log('Starting file upload:', file.name, file.size);
+    
     if (file.size > 100 * 1024 * 1024) {
       toast({
         title: "File too large",
@@ -37,11 +39,13 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
     }
 
     setUploading(true);
+    setUploadSuccess(false);
     
     try {
       const formData = new FormData();
       formData.append('file', file);
 
+      console.log('Calling process-dataset function...');
       const { data, error } = await supabase.functions.invoke('process-dataset', {
         body: formData,
         headers: {
@@ -49,21 +53,34 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
         }
       });
 
+      console.log('Function response:', { data, error });
+
       if (error) {
+        console.error('Supabase function error:', error);
         throw error;
       }
 
+      if (!data) {
+        throw new Error('No data returned from processing function');
+      }
+
+      console.log('Processing successful, calling onDataUploaded...');
+      setUploadSuccess(true);
       onDataUploaded(data);
       
       toast({
         title: "Upload successful",
-        description: `Processed ${data.preview.totalRows} rows and ${data.preview.totalColumns} columns`
+        description: `Processed ${data.preview?.totalRows || 'unknown'} rows and ${data.preview?.totalColumns || 'unknown'} columns`
       });
+
+      // Reset success state after a delay
+      setTimeout(() => setUploadSuccess(false), 3000);
+      
     } catch (error) {
       console.error('Upload error:', error);
       toast({
         title: "Upload failed",
-        description: "Failed to process the CSV file",
+        description: error instanceof Error ? error.message : "Failed to process the CSV file",
         variant: "destructive"
       });
     } finally {
@@ -109,6 +126,8 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 dragActive 
                   ? "border-blue-500 bg-blue-50" 
+                  : uploadSuccess
+                  ? "border-green-500 bg-green-50"
                   : "border-gray-300 hover:border-gray-400"
               }`}
               onDragEnter={handleDrag}
@@ -120,6 +139,16 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
                 <div className="space-y-4">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
                   <p className="text-gray-600">Processing your financial data...</p>
+                </div>
+              ) : uploadSuccess ? (
+                <div className="space-y-4">
+                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+                  <div>
+                    <p className="text-lg font-medium text-green-700 mb-2">
+                      Upload successful!
+                    </p>
+                    <p className="text-green-600">Redirecting to analysis...</p>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -149,6 +178,7 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
           </CardContent>
         </Card>
 
+        
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">

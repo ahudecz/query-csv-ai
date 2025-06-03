@@ -9,7 +9,83 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      analysis_sessions: {
+        Row: {
+          created_at: string
+          dataset_id: string
+          id: string
+          session_name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dataset_id: string
+          id?: string
+          session_name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dataset_id?: string
+          id?: string
+          session_name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analysis_sessions_dataset_id_fkey"
+            columns: ["dataset_id"]
+            isOneToOne: false
+            referencedRelation: "datasets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      datasets: {
+        Row: {
+          column_names: string[]
+          created_at: string
+          file_size: number
+          filename: string
+          id: string
+          original_filename: string
+          stats: Json | null
+          storage_path: string
+          total_columns: number
+          total_rows: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          column_names: string[]
+          created_at?: string
+          file_size: number
+          filename: string
+          id?: string
+          original_filename: string
+          stats?: Json | null
+          storage_path: string
+          total_columns: number
+          total_rows: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          column_names?: string[]
+          created_at?: string
+          file_size?: number
+          filename?: string
+          id?: string
+          original_filename?: string
+          stats?: Json | null
+          storage_path?: string
+          total_columns?: number
+          total_rows?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
