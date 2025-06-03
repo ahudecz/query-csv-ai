@@ -1,7 +1,8 @@
+
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, FileText, AlertCircle, CheckCircle } from "lucide-react";
+import { Upload, FileText, AlertCircle, CheckCircle, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -70,7 +71,8 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
       
       toast({
         title: "Upload successful",
-        description: `Processed ${data.preview?.totalRows || 'unknown'} rows and ${data.preview?.totalColumns || 'unknown'} columns`
+        description: `Processed ${data.preview?.totalRows || 'unknown'} rows and ${data.preview?.totalColumns || 'unknown'} columns. AI vectorization started for enhanced analysis.`,
+        duration: 5000
       });
 
       // Reset success state after a delay
@@ -139,6 +141,7 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
                 <div className="space-y-4">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
                   <p className="text-gray-600">Processing your financial data...</p>
+                  <p className="text-sm text-gray-500">Analyzing patterns and preparing AI vectorization</p>
                 </div>
               ) : uploadSuccess ? (
                 <div className="space-y-4">
@@ -147,7 +150,7 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
                     <p className="text-lg font-medium text-green-700 mb-2">
                       Upload successful!
                     </p>
-                    <p className="text-green-600">Redirecting to analysis...</p>
+                    <p className="text-green-600">AI vectorization started for enhanced analysis</p>
                   </div>
                 </div>
               ) : (
@@ -182,8 +185,8 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5" />
-              <span>Requirements</span>
+              <Zap className="w-5 h-5 text-yellow-500" />
+              <span>Enhanced AI Analysis</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -197,18 +200,36 @@ export const UploadDataEnhanced = ({ onDataUploaded }: UploadDataEnhancedProps) 
                 <span className="text-sm">Maximum file size: 100MB</span>
               </div>
               <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span className="text-sm font-medium">AI vectorization for deeper insights</span>
+              </div>
+              <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 <span className="text-sm">Data will be securely processed and stored</span>
               </div>
             </div>
             
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-purple-200">
+              <h4 className="font-medium text-purple-900 mb-2 flex items-center">
+                <Zap className="w-4 h-4 mr-1 text-yellow-500" />
+                Enhanced AI Features
+              </h4>
+              <ul className="text-sm text-purple-700 space-y-1">
+                <li>• Your data will be vectorized using OpenAI embeddings</li>
+                <li>• AI can now understand semantic patterns in your transactions</li>
+                <li>• Get more accurate and contextual financial insights</li>
+                <li>• Ask complex questions about spending patterns and trends</li>
+                <li>• Similarity-based analysis for anomaly detection</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
               <h4 className="font-medium text-blue-900 mb-2">What happens next?</h4>
               <ul className="text-sm text-blue-700 space-y-1">
                 <li>• Your data will be parsed and analyzed</li>
                 <li>• Advanced financial statistics will be calculated</li>
-                <li>• Data will be securely stored in your account</li>
-                <li>• You can then ask AI questions about your financial data</li>
+                <li>• Data will be vectorized for AI analysis</li>
+                <li>• You can then ask sophisticated questions about your data</li>
               </ul>
             </div>
           </CardContent>

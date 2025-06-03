@@ -57,6 +57,23 @@ serve(async (req) => {
       });
     }
 
+    // Create storage bucket if it doesn't exist
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const datasetBucket = buckets?.find(bucket => bucket.name === 'datasets');
+    
+    if (!datasetBucket) {
+      console.log('Creating datasets bucket');
+      const { error: bucketError } = await supabase.storage.createBucket('datasets', {
+        public: false,
+        fileSizeLimit: 52428800, // 50MB
+        allowedMimeTypes: ['text/csv']
+      });
+      
+      if (bucketError) {
+        console.error('Failed to create bucket:', bucketError);
+      }
+    }
+
     // Parse CSV content with timeout protection
     console.log('Starting CSV parsing');
     const csvText = await file.text();
@@ -164,6 +181,21 @@ serve(async (req) => {
 
     console.log('Dataset saved to database');
 
+    // Trigger vectorization in the background (don't wait for completion)
+    console.log('Triggering vectorization process');
+    supabase.functions.invoke('vectorize-dataset', {
+      body: { datasetId: dataset.id },
+      headers: { Authorization: authHeader }
+    }).then(({ data, error }) => {
+      if (error) {
+        console.error('Vectorization trigger failed:', error);
+      } else {
+        console.log('Vectorization triggered successfully:', data);
+      }
+    }).catch(err => {
+      console.error('Vectorization trigger error:', err);
+    });
+
     const response = {
       dataset,
       preview: {
@@ -172,7 +204,8 @@ serve(async (req) => {
         totalRows: rows.length,
         totalColumns: headers.length,
         stats,
-        processingNote: lines.length > maxRows ? `Only first ${maxRows} rows were processed for performance` : null
+        processingNote: lines.length > maxRows ? `Only first ${maxRows} rows were processed for performance` : null,
+        vectorization: 'Vectorization started in background for enhanced AI analysis'
       }
     };
 
