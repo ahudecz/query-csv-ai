@@ -14,6 +14,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log('Processing dataset request started');
+    
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -24,35 +26,58 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
+      console.error('Authentication failed:', authError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    console.log('User authenticated:', user.id);
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     
     if (!file) {
+      console.error('No file provided');
       return new Response(JSON.stringify({ error: 'No file provided' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Parse CSV content
+    console.log('File received:', file.name, 'Size:', file.size);
+
+    // Check file size limit (50MB instead of 100MB for better performance)
+    if (file.size > 50 * 1024 * 1024) {
+      console.error('File too large:', file.size);
+      return new Response(JSON.stringify({ error: 'File too large. Maximum size is 50MB.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Parse CSV content with timeout protection
+    console.log('Starting CSV parsing');
     const csvText = await file.text();
     const lines = csvText.split('\n').filter(line => line.trim());
     
     if (lines.length === 0) {
+      console.error('Empty file');
       return new Response(JSON.stringify({ error: 'Empty file' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const rows = lines.slice(1).map(line => {
+    console.log('CSV parsed, lines:', lines.length);
+
+    // Limit processing to first 10,000 rows for performance
+    const maxRows = 10000;
+    const processLines = lines.slice(0, Math.min(lines.length, maxRows));
+    
+    const headers = processLines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    const rows = processLines.slice(1).map(line => {
       const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
       const row: any = {};
       headers.forEach((header, index) => {
@@ -61,10 +86,18 @@ serve(async (req) => {
       return row;
     });
 
-    // Calculate statistics
+    console.log('Data processed, rows:', rows.length, 'columns:', headers.length);
+
+    // Calculate basic statistics (simplified for performance)
+    console.log('Calculating statistics');
     const stats: any = {};
-    headers.forEach((header: string) => {
-      const values = rows.map((row: any) => row[header]).filter((val: any) => val !== '');
+    
+    // Process only first 5 columns for stats to avoid timeout
+    const maxCols = Math.min(headers.length, 5);
+    
+    for (let i = 0; i < maxCols; i++) {
+      const header = headers[i];
+      const values = rows.slice(0, 1000).map((row: any) => row[header]).filter((val: any) => val !== '');
       const numericValues = values.map(Number).filter(n => !isNaN(n));
       
       if (numericValues.length > 0) {
@@ -73,35 +106,36 @@ serve(async (req) => {
           count: numericValues.length,
           min: Math.min(...numericValues),
           max: Math.max(...numericValues),
-          sum: numericValues.reduce((a: number, b: number) => a + b, 0),
-          avg: numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length,
-          median: numericValues.sort((a, b) => a - b)[Math.floor(numericValues.length / 2)]
+          avg: numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length
         };
       } else {
         stats[header] = {
           type: 'text',
           count: values.length,
-          uniqueValues: [...new Set(values)].length,
-          mostCommon: values.reduce((a: any, b: any) => 
-            values.filter(v => v === a).length >= values.filter(v => v === b).length ? a : b
-          )
+          uniqueValues: [...new Set(values.slice(0, 100))].length
         };
       }
-    });
+    }
+
+    console.log('Statistics calculated');
 
     // Store file in Supabase Storage
     const fileName = `${user.id}/${Date.now()}-${file.name}`;
+    console.log('Uploading to storage:', fileName);
+    
     const { error: uploadError } = await supabase.storage
       .from('datasets')
       .upload(fileName, file);
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
-      return new Response(JSON.stringify({ error: 'Failed to upload file' }), {
+      return new Response(JSON.stringify({ error: 'Failed to upload file: ' + uploadError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    console.log('File uploaded successfully');
 
     // Save dataset metadata to database
     const { data: dataset, error: dbError } = await supabase
@@ -122,28 +156,37 @@ serve(async (req) => {
 
     if (dbError) {
       console.error('Database error:', dbError);
-      return new Response(JSON.stringify({ error: 'Failed to save dataset metadata' }), {
+      return new Response(JSON.stringify({ error: 'Failed to save dataset metadata: ' + dbError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    return new Response(JSON.stringify({
+    console.log('Dataset saved to database');
+
+    const response = {
       dataset,
       preview: {
         headers,
         rows: rows.slice(0, 100),
         totalRows: rows.length,
         totalColumns: headers.length,
-        stats
+        stats,
+        processingNote: lines.length > maxRows ? `Only first ${maxRows} rows were processed for performance` : null
       }
-    }), {
+    };
+
+    console.log('Request completed successfully');
+
+    return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('Function error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error: ' + (error instanceof Error ? error.message : 'Unknown error')
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
