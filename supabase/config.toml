@@ -1,0 +1,26 @@
+
+project_id = "kvxxdejpqvwwgisluhbs"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+port = 54322
+external_url = "http://localhost:54321"
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 3600
+refresh_token_rotation_enabled = true
+disable_signup = false
+enable_signup = true
+
+[functions.process-dataset]
+verify_jwt = true
+
+[functions.ai-analysis]
+verify_jwt = true
